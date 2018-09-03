@@ -2,6 +2,7 @@ import numpy as np
 import scipy as sp
 from scipy import constants as const
 import itertools
+from itertools import accumulate
 
 from matplotlib import pyplot as plt
 
@@ -25,6 +26,11 @@ class Axion:
         # the standard deviation of the distribution the phase change is drawn
         # from, when normalized by
         self.phase_std = 1 / np.sqrt(2)
+        # the random axion velocity
+        # TODO: initialize to a random velocity
+        self.vx = 0
+        self.vy = 0
+        self.vz = 0
 
 
     def get_next_phase(self, timestep, n=1):
@@ -55,6 +61,24 @@ class Axion:
             return self.phase_value
         else:
             return phases
+
+    def get_next_vel(self, timestep, n=1, w=.1):
+        """
+        """
+        # how much of a coherence time is a timestep?
+        time_fraction = timestep / self.coherence_time
+        # compute the velocity steps
+        vdelt = self.phase_std * np.sqrt(time_fraction) * np.random.randn(n, 3)
+
+        # do a modified random walk, which penalizes deviations from the mean
+        v = np.array(list(accumulate(vdelt, lambda v0, v: v0 * (1 - w) + v)))
+        plt.plot(v.T[0])
+        plt.plot(v.T[1])
+        plt.plot(v.T[2])
+
+        return v
+
+
 
     def get_pure_axion(self, timestep=None, n=None):
         """
