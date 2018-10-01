@@ -32,7 +32,6 @@ class Axion:
         self.vy = 0
         self.vz = 0
 
-
     def get_next_phase(self, timestep, n=1):
         """
         computes the phase evolution of the axion according to it's coherence
@@ -78,8 +77,6 @@ class Axion:
 
         return v
 
-
-
     def get_pure_axion(self, timestep=None, n=None):
         """
         returns x and y for a pure (no noise) axion at given timesteps, for a
@@ -95,4 +92,3 @@ class Axion:
         phases = self.get_next_phase(timestep, len(x))
         axion = np.sin(self.frequency * x + phases)
         return (x, axion)
-

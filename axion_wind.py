@@ -150,3 +150,4 @@ def plot_dm_component(time=None):
     #plt.plot(vy)
     return halo_vel, x, y, z
 
+
