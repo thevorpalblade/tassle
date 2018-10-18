@@ -49,8 +49,9 @@ def get_halo_vel(time=None, loc=None):
     CASPEr_loc = coord.EarthLocation(lon=lon, lat=lat, height=elev)
     # make a sky_coord with CASPEr's location and velcity in GCRS coordinates
     CASPEr_inst_loc = coord.SkyCoord(CASPEr_loc.get_gcrs(time))
-    # transform to the galactocentric frame and take the velocity
-    return CASPEr_inst_loc.galactocentric.cartesian.differentials['s']
+    # transform to the galactocentric frame and take the velocity, also
+    # toss a negative on to get the axion wind speed
+    return -CASPEr_inst_loc.galactocentric.cartesian.differentials['s']
 
 def convert_to_float128(sky_coord):
     """
@@ -70,13 +71,26 @@ def convert_to_float128(sky_coord):
 def get_CASPEr_vect(time=None, lat=CASPEr_lat, lon=CASPER_lon,
                     elev=CASPER_elevation):
     """
-    This function does the heavy lifting of the whole operation.
 
-    It computes the unit vectors in the north, east, and up directions at
+    This is a function to compute the average velocity and direction of
+    the earth within the galactic dark matter halo. The reason is to compute
+    the velocity and the direction of the axion wind at the CASPEr detector
+    (although this will be the average wind, not the instantaneous wind which
+    will vary from one coherence time to another).
+    It also computes the unit vectors in the north, east, and up directions at
     the specified time and location, but in the galactocentric frame.
 
-    time should be an astropy.time.Time object. If it specifies multiple times,
-    multiple sets of unit vectors are returned.
+    It accepts optional inputs time, lat, lon, and elev
+
+    time should be a astropy Time object (possibly specifying an array of
+    times, in which case the Cartesian representation returned will contain
+    an array of locations as well). If not specified, the current time is used.
+
+    lat, lon, and elev specify a location on earth. elev should be in meters.
+    By default, the location of CASPEr in Mainz is used.
+
+    Returns (time, unit_x, unit_y, unit_z, V)
+    with units (unix time, dimensionless, and Km/sec)
     """
     # if we don't have a time array passed in, just use right now
     if time is None:
@@ -86,6 +100,10 @@ def get_CASPEr_vect(time=None, lat=CASPEr_lat, lon=CASPER_lon,
                                      height=elev)
     # location in the solar system of CASPEr at a given moment in GCRS coords.
     CASPEr_inst_loc = coord.SkyCoord(CASPEr_loc.get_gcrs(time))
+    # get velocities too, so we can do an all-in-one function
+    # note the negative, since we want the velocity of the DM halo on earth
+    halo_vels = -CASPEr_inst_loc.galactocentric.cartesian.differentials['s']
+
     # recast as float128
     CASPEr_inst_loc = convert_to_float128(CASPEr_inst_loc)
     # get the spherical representation of the GCRS coordinates
@@ -124,7 +142,7 @@ def get_CASPEr_vect(time=None, lat=CASPEr_lat, lon=CASPER_lon,
     ng_north = galactocentric_north / galactocentric_north.norm()
     ng_east = galactocentric_east / galactocentric_east.norm()
 
-    return ng_north, ng_east, ng_up
+    return time, ng_north, ng_east, ng_up, halo_vels
 
 
 def plot_dm_component(time=None):
@@ -140,14 +158,12 @@ def plot_dm_component(time=None):
     times = np.arange(1535018948.6150093, 1535018948.6150093+60*60*24*365, 600)
     t = Time(times, format='unix')
 
-    halo_vel = get_halo_vel(t)
-    x, y, z = get_CASPEr_vect(t)
+    t, x, y, z, halo_vel = get_CASPEr_vect(t)
 
     vx = x.dot(halo_vel)
     vy = y.dot(halo_vel)
 
     #plt.plot(vx)
     #plt.plot(vy)
-    return halo_vel, x, y, z
 
 
