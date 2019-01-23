@@ -1,0 +1,34 @@
+
+Things to evovle at each step:
+
+phase
+velocity
+amplitude? maybe later
+
+
+
+each step is:
+base step + extra from proper motion
+
+
+sigma + 
+
+options:
+generate effective coherence times
+generate phase deltas
+np.cumsum to get all phases
+
+
+generate effective coherence times
+generate velocity deltas
+np.accumulate to do valley random walk
+
+
+brainstorm: valley random walk width
+
+Note, i did this, which probably is bad:
+cd /usr/lib
+sudo ln -s libwcs.so libwcs.so.5
+Aaaand fixed it.
+
+axion 
