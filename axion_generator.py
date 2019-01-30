@@ -22,6 +22,7 @@ class Axion:
             velocities_file="axion_wind.pkl",
             sampling_rate=800,
             sampling_time=60 * 60 * 24 * 10,
+            init_phase=None
     ):
         # mass in eV
         self.mass = mass
@@ -42,7 +43,8 @@ class Axion:
         # width of 1d velocity distribution in km/sec
         # TODO real value here
         self.v_std = 200
-        self.phase_value = 0
+        if init_phase is None:
+            self.phase_value = 2 * np.pi * np.random.random()
         # the standard deviation of the distribution the phase change is drawn
         # from, when normalized by timestep
         self.phase_std = 1 / np.sqrt(2)
@@ -119,7 +121,7 @@ class Axion:
         # vs = np.array(list(accumulate(vdelt, lambda v0, v: v0 * (1 - w) + v)))
         # return vs.T
 
-    def get_pure_axion(self, v_wind, vels, phases, t):
+    def get_pure_axion(self, v_wind, vels, phases, t, debug=False):
         """
         returns x and y for a pure (no noise) axion at given timesteps, for a
         given number of samples (n).
@@ -130,9 +132,17 @@ class Axion:
             v * self.xhat(t), axis=0) + np.sum(
                 v * self.yhat(t), axis=0)
         axion = self.coupling * wind * np.sin(self.frequency * t + phases)
+        if debug:
+            plt.subplot(211)
+            plt.plot(t, phases)
+            plt.subplot(212)
+            axion = np.sin(self.frequency * t + phases)
+            axion_nophase = np.sin(self.frequency * t + self.phase_value)
+            plt.plot(t, (axion + axion_nophase) ** 2)
+            plt.show()
         return axion
 
-    def do_axion_sim(self, start_t, end_t, sampling_rate):
+    def do_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
         """
         """
         # sanity check
@@ -176,9 +186,13 @@ class Axion:
         print("Calculating axion field values")
 
         strt = time.time()
-        result = self.get_pure_axion(v_wind, vels, phases, t)
-        # result = get_pure_axion(vels, v_wind, phases, xhat, yhat,
-        #                        self.coupling, self.frequency, t)
+        if debug:
+            result = self.get_pure_axion(v_wind, vels, phases, t, True)
+        else:
+            xhat = self.xhat(t)
+            yhat = self.yhat(t)
+            result = get_pure_axion(vels, v_wind, phases, xhat, yhat,
+                                    self.coupling, self.frequency, t)
         stp = time.time()
         print(stp - strt)
         return t, result
@@ -190,7 +204,7 @@ class Axion:
         return f, p0
 
 
-@njit(cache=True)
+@njit(cache=True, fastmath=True)
 def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
     """
     Generate the velocities random walk! :D
@@ -212,7 +226,7 @@ def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
     return vdelt.T
 
 
-@njit(cache=True)
+@njit(cache=True, parallel=True)
 def get_pure_axion(vels, v_wind, phases, xhat, yhat, coupling, frequency, t):
     """
     returns x and y for a pure (no noise) axion at given timesteps, for a
@@ -220,19 +234,19 @@ def get_pure_axion(vels, v_wind, phases, xhat, yhat, coupling, frequency, t):
     Returns x and y for the axion intesity.
     """
     axion = np.empty_like(t, dtype=np.float64)
-    for i in range(len(t)):
-        v = v_wind[:, i] + vels[:, i]
-        wind = np.sum(v * (xhat[:, i] + yhat[:, i]))
+    for i in numba.prange(len(t)):
+        v = v_wind.T[i] + vels.T[i]
+        wind = np.sum(v * (xhat.T[i] + yhat.T[i]))
         axion[i] = coupling * wind * np.sin(frequency * t[i] + phases[i])
 
     return axion
 
 
-def main(days=1 / 24):
+def main(days=2, debug=False):
     a = Axion()
     start = a.t_raw[0]
     end = start + 60 * 60 * 24 * days
-    r = a.do_axion_sim(start, end, a.frequency * 2.5)
+    r = a.do_axion_sim(start, end, a.frequency * 2.5, debug)
     return r
 
 
