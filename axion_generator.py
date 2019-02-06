@@ -226,6 +226,44 @@ def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
     return vdelt.T
 
 
+def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
+                  n, v_wind, z_hat, t, sampling_rate,
+                  frequency, coupling,
+                  coh_time, coh_length, w=0.001):
+    """
+    This inner loop combines several tasks into one optimized loop, so that we
+    only have to run one iteration.
+    """
+    # the axion array
+    axion = np.array(n)
+    # variables to hold the last phase, velocity, and amplitude (the things
+    # being random-walked
+    phase = phase0
+    vel = v0
+    amp = a0
+    v_wind_mag = np.sqrt((v_wind.T[0]).dot(v_wind.T[0]))
+    root_time_fraction = np.sqrt((1/coh_time + v_wind_mag / coh_length) / sampling_rate)
+
+    # do a modified random walk, which penalizes deviations from the mean
+    for i in range(1, n):
+        # compute the time fraction (based on the effective coherence time)
+        v_wind_mag = np.sqrt((v_wind.T[i]).dot(v_wind.T[i]))
+        root_time_fraction = np.sqrt((1/coh_time + v_wind_mag / coh_length) / sampling_rate)
+        # the velocity random walk
+        vel = (vel * (1 - w)
+               + np.random.randn(3) * root_time_fraction * np.array([1, 1, 1]))
+        # the amplitude random walk
+        amp = (amp * (1 - w)
+               + a_rr_std * np.random.randn() * root_time_fraction)
+        # the phase random walk
+        phase += phase_rr_std * root_time_fraction * np.random.randn()
+        wind = np.cross((v_wind.T[i] + vel), z_hat.T[i])
+
+        axion[i] = wind * coupling * amp * np.sin(frequency * t[i] + phase)
+
+    return axion
+
+
 @njit(cache=True, parallel=True)
 def get_pure_axion(vels, v_wind, phases, xhat, yhat, coupling, frequency, t):
     """
