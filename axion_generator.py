@@ -22,7 +22,7 @@ class Axion:
             velocities_file="axion_wind.pkl",
             sampling_rate=800,
             sampling_time=60 * 60 * 24 * 10,
-            init_phase=None
+            phase0=None
     ):
         # mass in eV
         self.mass = mass
@@ -34,7 +34,7 @@ class Axion:
         self.frequency = mass / const.value("Planck constant in eV s")
         # our coherence time (1/ the real linewidth)
         # self.coherence_time = 1 / (linewidth * self.frequency)
-        self.coherence_time = 40e-6 * 100e-6 / self.mass
+        self.coh_time = 40e-6 * 100e-6 / self.mass
         # placeholder value, in km
         # TODO: this is just a placeholder value
         # self.coh_length = 10 * self.coherence_time
@@ -43,15 +43,17 @@ class Axion:
         # width of 1d velocity distribution in km/sec
         # TODO real value here
         self.v_std = 200
-        if init_phase is None:
-            self.phase_value = 2 * np.pi * np.random.random()
+        if phase0 is None:
+            self.phase0 = 2 * np.pi * np.random.random()
         # the standard deviation of the distribution the phase change is drawn
         # from, when normalized by timestep
-        self.phase_std = 1 / np.sqrt(2)
+        self.phase_rr_std = 1 / np.sqrt(2)
         # velocity distribution width to draw from for velocity random walk
         # (may be different from the width of the maxwell velocity
         # distribution) TODO: check this
         self.vel_rr_std = self.v_std / np.sqrt(2)
+        self.a_rr_std = 1.
+        self.a0 = 1
 
         # the random axion velocity
         self.v0 = np.array([
@@ -142,6 +144,45 @@ class Axion:
             plt.show()
         return axion
 
+
+    def do_fast_axion_sim(self,  start_t, end_t, sampling_rate):
+        """
+        """
+        # sanity check
+        assert start_t >= self.t_raw[0]
+        assert end_t <= self.t_raw[-1]
+
+        # Define the time-step, number of samples, and time points.
+        # Start and stop time taken from the DM Halo velocity data
+        sampling_time = end_t - start_t
+
+        n = int(sampling_time * sampling_rate)
+
+        print("Generating time points")
+        t = np.linspace(start_t, end_t, n)
+
+        print("Calculating interpolated quantities")
+        strt = time.time()
+        v_wind = self.v_wind(t)
+        zhat = self.zhat(t)
+
+        stp = time.time()
+        print(stp - strt)
+
+        print("doing heavy lifting")
+
+        strt = time.time()
+        r = heavy_lifting(self.vel_rr_std, self.v0, self.a_rr_std,
+                          self.a0, self.phase_rr_std, self.phase0,
+                          n, v_wind, zhat, t, sampling_rate,
+                          self.frequency, self.coupling,
+                          self.coh_time, self.coh_length, w=0.001)
+        stp = time.time()
+        print(stp - strt)
+        return t, r
+
+
+
     def do_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
         """
         """
@@ -166,11 +207,11 @@ class Axion:
         print(stp - strt)
         print("Calculating effective coherence times")
         # effective coherence times based on DM halo velocities
-        coherence_times = 1 / (
-            1 / self.coherence_time + v_wind_mag / self.coh_length)
+        coh_times = 1 / (
+            1 / self.coh_time + v_wind_mag / self.coh_length)
         # compute the time fractions, relevant for deciding the width of the
         # random distribution we pull from for the phase/velocity deltas
-        root_time_fractions = np.sqrt(1 / (sampling_rate * coherence_times))
+        root_time_fractions = np.sqrt(1 / (sampling_rate * coh_times))
 
         print("Calculating phases")
         strt = time.time()
@@ -225,7 +266,7 @@ def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
             vdelt[i] += vdelt[i - 1] * (1 - w)
     return vdelt.T
 
-
+@njit(cache=True, fastmath=True)
 def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
                   n, v_wind, z_hat, t, sampling_rate,
                   frequency, coupling,
@@ -235,7 +276,7 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
     only have to run one iteration.
     """
     # the axion array
-    axion = np.array(n)
+    axion = np.empty(n)
     # variables to hold the last phase, velocity, and amplitude (the things
     # being random-walked
     phase = phase0
@@ -257,7 +298,11 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
                + a_rr_std * np.random.randn() * root_time_fraction)
         # the phase random walk
         phase += phase_rr_std * root_time_fraction * np.random.randn()
-        wind = np.cross((v_wind.T[i] + vel), z_hat.T[i])
+
+        # an optimized form for the magnitude cross product
+        a = v_wind.T[i] + vel
+        b = z_hat.T[i]
+        wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b)) ** 2)
 
         axion[i] = wind * coupling * amp * np.sin(frequency * t[i] + phase)
 
@@ -284,7 +329,7 @@ def main(days=2, debug=False):
     a = Axion()
     start = a.t_raw[0]
     end = start + 60 * 60 * 24 * days
-    r = a.do_axion_sim(start, end, a.frequency * 2.5, debug)
+    r = a.do_fast_axion_sim(start, end, a.frequency * 2.5)
     return r
 
 
