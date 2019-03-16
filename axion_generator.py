@@ -19,7 +19,7 @@ class Axion:
             self,
             mass=1e-12,
             coupling=1,
-            velocities_file="axion_wind.pkl",
+            velocities_file="axion_wind_sparse.pkl",
             sampling_rate=800,
             sampling_time=60 * 60 * 24 * 10,
             phase0=None
@@ -83,11 +83,11 @@ class Axion:
         """
 
         # efficiently calculate a bunch of phase deltas
-        phase_deltas = self.phase_std * root_time_fractions * np.random.randn(
+        phase_deltas = self.phase_rr_std * root_time_fractions * np.random.randn(
             n)
 
         # for convenience, add the old phase value to the first phase delta
-        phase_deltas[0] = phase_deltas[0] + self.phase_value
+        phase_deltas[0] = phase_deltas[0] + self.phase0
         # now we can compute all the phases along the way efficiently
         phases = np.cumsum(phase_deltas)
 
@@ -117,6 +117,7 @@ class Axion:
                 vdelt[0][2] = self.vz
             else:
                 vdelt[i] += vdelt[i - 1] * (1 - w)
+        import ipdb; ipdb.set_trace()
         return vdelt.T
 
         # vs = uf_weighted_sum.accumulate(vdelt, axis=0, dtype=np.object).astype(np.float64)
@@ -143,7 +144,6 @@ class Axion:
             plt.plot(t, (axion + axion_nophase) ** 2)
             plt.show()
         return axion
-
 
     def do_fast_axion_sim(self,  start_t, end_t, sampling_rate):
         """
@@ -180,8 +180,6 @@ class Axion:
         stp = time.time()
         print(stp - strt)
         return t, r
-
-
 
     def do_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
         """
@@ -266,6 +264,7 @@ def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
             vdelt[i] += vdelt[i - 1] * (1 - w)
     return vdelt.T
 
+
 @njit(cache=True, fastmath=True)
 def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
                   n, v_wind, z_hat, t, sampling_rate,
@@ -276,20 +275,36 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
     only have to run one iteration.
     """
     # the axion array
-    axion = np.empty(n)
+    axion = np.zeros(n)
     # variables to hold the last phase, velocity, and amplitude (the things
     # being random-walked
     phase = phase0
     vel = v0
     amp = a0
     v_wind_mag = np.sqrt((v_wind.T[0]).dot(v_wind.T[0]))
-    root_time_fraction = np.sqrt((1/coh_time + v_wind_mag / coh_length) / sampling_rate)
+    # the time fraction gives the width of the distribution to draw from,
+    # taking into account the velocity at this point and the sampling rate.
+    # (you have to take the square root to get the real width though)
+    time_fraction = (1/coh_time + v_wind_mag / coh_length) / sampling_rate
+    # The dad correction factor: as the random walk progresses, we want to limit
+    # it's eventual size to a steady state. So keep track of the cumulative draw
+    # width and divide it back out. 
+    total_width = time_fraction
+    # calculate the first axion point
+    a = v_wind.T[0] + vel
+    b = z_hat.T[0]
+    wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b)) ** 2)
+
+    axion[0] = wind * coupling * amp * np.sin(frequency * t[0] + phase)
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
         # compute the time fraction (based on the effective coherence time)
         v_wind_mag = np.sqrt((v_wind.T[i]).dot(v_wind.T[i]))
-        root_time_fraction = np.sqrt((1/coh_time + v_wind_mag / coh_length) / sampling_rate)
+        time_fraction = (1/coh_time + v_wind_mag / coh_length) / sampling_rate
+        total_width += time_fraction
+        root_time_fraction = np.sqrt(time_fraction)
+        root_total_width = np.sqrt(total_width)
         # the velocity random walk
         vel = (vel * (1 - w)
                + np.random.randn(3) * root_time_fraction * np.array([1, 1, 1]))
@@ -325,11 +340,12 @@ def get_pure_axion(vels, v_wind, phases, xhat, yhat, coupling, frequency, t):
     return axion
 
 
-def main(days=2, debug=False):
+def main(days=1, debug=False):
     a = Axion()
     start = a.t_raw[0]
     end = start + 60 * 60 * 24 * days
     r = a.do_fast_axion_sim(start, end, a.frequency * 2.5)
+    #r = a.do_axion_sim(start, end, a.frequency * 2.5)
     return r
 
 

@@ -145,7 +145,7 @@ def get_CASPEr_vect(time=None, lat=CASPEr_lat, lon=CASPER_lon,
     return time, ng_north, ng_east, ng_up, halo_vels
 
 
-def plot_dm_component(time=None):
+def plot_dm_component(days=365, samp_hrs=1, time=None):
     """
     A function to plot the x and y components of average halo velocity.
     Also gives a nice example of computing a bunch of time locations in one
@@ -153,9 +153,9 @@ def plot_dm_component(time=None):
     all in the galactocentric frame, for convenience.
     """
     if time is None:
-        time = Time.now()
+        time = Time.now().unix
 
-    times = np.arange(1535018948.6150093, 1535018948.6150093+60*60*24*365, 600)
+    times = np.arange(time, time + 60*60*24*days, 60*60*samp_hrs)
     t = Time(times, format='unix')
 
     t, x, y, z, halo_vel = get_CASPEr_vect(t)
@@ -163,7 +163,8 @@ def plot_dm_component(time=None):
     vx = x.dot(halo_vel)
     vy = y.dot(halo_vel)
 
-    #plt.plot(vx)
-    #plt.plot(vy)
+    plt.plot(vx)
+    plt.plot(vy)
+    return(t, x, y, z, halo_vel)
 
 
