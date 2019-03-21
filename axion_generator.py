@@ -265,7 +265,7 @@ def gen_vels(vel_rr_std, root_time_fractions, v0, n, w=0.001):
     return vdelt.T
 
 
-@njit(cache=True, fastmath=True)
+#@njit(cache=True, fastmath=True)
 def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
                   n, v_wind, z_hat, t, sampling_rate,
                   frequency, coupling,
@@ -294,8 +294,16 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
     a = v_wind.T[0] + vel
     b = z_hat.T[0]
     wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b)) ** 2)
-
     axion[0] = wind * coupling * amp * np.sin(frequency * t[0] + phase)
+
+    # for debug purposes, record the phasres, vels, and amplitudes
+    phases = np.zeros(n)
+    amps = np.zeros(n)
+    vels = np.zeros((n, 3))
+
+    phases[0] = phase
+    amps[0] = amp
+    vels[0] = vel
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
@@ -306,11 +314,11 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
         root_time_fraction = np.sqrt(time_fraction)
         root_total_width = np.sqrt(total_width)
         # the velocity random walk
-        vel = (vel * (1 - w)
-               + np.random.randn(3) * root_time_fraction * np.array([1, 1, 1]))
+        vel = (vel + (np.random.randn(3)
+                      * root_time_fraction
+                      * np.array([1, 1, 1]))) / root_total_width
         # the amplitude random walk
-        amp = (amp * (1 - w)
-               + a_rr_std * np.random.randn() * root_time_fraction)
+        amp = (amp + a_rr_std * np.random.randn() * root_time_fraction) / root_total_width
         # the phase random walk
         phase += phase_rr_std * root_time_fraction * np.random.randn()
 
@@ -321,7 +329,12 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
 
         axion[i] = wind * coupling * amp * np.sin(frequency * t[i] + phase)
 
-    return axion
+        # store these values for debugging
+        phases[i] = phase
+        amps[i] = amp
+        vels[i] = vel
+
+    return axion, phases, amps, vels
 
 
 @njit(cache=True, parallel=True)
