@@ -21,7 +21,7 @@ def do_numba_rw(n=1000, w=0.99, sigma=1.0, init_sigma=7):
 
 
 @numba.njit(fastmath=True)
-def find_final_std(w, sigma, tolerance=0.1, n=1000, nrounds=1000):
+def find_final_std(w, sigma, tolerance=0.01, n=1000, nrounds=1000):
     # get two initial data points
     vals = np.array([do_numba_rw(n, w=w, sigma=sigma) for i in range(nrounds)])
     old_std = np.std(vals)
@@ -37,14 +37,13 @@ def find_final_std(w, sigma, tolerance=0.1, n=1000, nrounds=1000):
     monotonic = True
     stds = []
     # make sure we don't trigger the first time
-    stderr = tolerance + 1
+    percent_err = tolerance + 1
 
     # the loop has two phases, the initial monotonic phase, and the phase where
     # we are actually recording stderrs.
-    while monotonic or (stderr > tolerance):
+    while monotonic or (percent_err > tolerance):
 
-        print("quack")
-        print("new std: ", new_std)
+        # print("new std: ", new_std)
         # if we are in the first phase, we will seed the next point with the
         # last std
         if not monotonic:
@@ -71,15 +70,15 @@ def find_final_std(w, sigma, tolerance=0.1, n=1000, nrounds=1000):
             stds.append(new_std)
             stds_array = np.array(stds)
             stderr = np.std(stds_array) / np.sqrt(len(stds_array) - 1)
-            print("stderr: ", stderr)
-
+            # print("stderr: ", stderr)
             avg = np.mean(stds_array)
+            percent_err = stderr / avg
 
     return (avg, np.std(stds_array))
 
 
 @numba.njit(fastmath=True)
-def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.1, nrounds=1000):
+def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.01, nrounds=1000):
     # if not passed a measured_sigma (final sigma of RR), find it:
     measured_sigma_std = 0
     if measured_sigma == -1.:
@@ -87,8 +86,8 @@ def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.1, nrounds=1000):
     # now do a bunch of random walks and find the coherence length for each one
     coherence_lengths = []
     # initialize stderr to a large value so we enter the loop the first time
-    stderr = tolerance + 1
-    while stderr > tolerance:
+    percent_err = tolerance + 1
+    while percent_err > tolerance:
         # initialize a random walk
         init_val = np.random.randn() * measured_sigma
         val = init_val
@@ -103,32 +102,52 @@ def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.1, nrounds=1000):
             counter += 1
         coherence_lengths.append(counter)
         if len(coherence_lengths) > 5:
-            stderr = np.std(np.array(coherence_lengths)) / np.sqrt(
-                len(coherence_lengths))
-            print("coherence_length: ", counter)
-            print("stderr: ", stderr)
+            coh_len_array = np.array(coherence_lengths)
+            stderr = np.std(coh_len_array) / np.sqrt(len(coherence_lengths))
+            percent_err = stderr / np.mean(coh_len_array)
+            # print("coherence_length: ", counter)
+            # print("stderr: ", stderr)
+            # print("percent error: ", percent_err)
     avg = np.mean(np.array(coherence_lengths))
     std_dev = np.std(np.array(coherence_lengths))
     return measured_sigma, measured_sigma_std, avg, std_dev
 
+@numba.njit(parallel=True)
+def search_coh_lengths():
+    # first, define the range of w and sigma to search
+    ws = np.linspace(-3, -1, 10)
+    ws = 1 - np.power(10, ws)
+    sigmas = np.linspace(.001, 10, 10)
 
-def thingy(w=0.99, n=10000, sigma=1, count=100, init_sigma=7):
-    last_points = []
-    for i in range(count):
-        x = do_numba_rw(w=w, n=n, sigma=sigma, init_sigma=init_sigma)
-        last_points.append(x)
-    plt.hist(last_points, 30)
-    print(np.std(last_points))
+    results = np.zeros((len(ws), len(sigmas), 4))
+    for i in numba.prange(len(ws)):
+        for j in numba.prange(len(sigmas)):
+            print("w: ", ws[i])
+            print("sigma: ", sigmas[j])
+            results[i][j] = find_coh_length(ws[i], sigmas[j])
 
-    return last_points
+    return ws, sigmas, results
 
 
-def do_bounded_rw(n=10000):
-    val = np.random.randn()
-    vals = np.zeros(n)
-    vals[0] = val
+def plot_properties(ws, sigmas, a):
+    plt.figure(1)
+    for i in range(len(ws)):
+        plt.errorbar(ws, a[:, i, 0], a[:, i, 1], label="sigma="+str(sigmas[i]))
+    plt.legend()
+    plt.xlabel("W")
+    plt.ylabel("Final Sigma")
 
-    for i in range(1, n):
-        val = np.random.randn() + val / np.sqrt(i)
-        vals[i] = val
-    return vals
+    plt.figure(2)
+    for i in range(len(ws)):
+        plt.errorbar(ws, a[:, i, 2], a[:, i, 3], label="sigma="+str(sigmas[i]))
+    plt.legend()
+    plt.xlabel("W")
+    plt.ylabel("Coherence Length")
+
+    plt.figure(3)
+    for i in range(len(sigmas)):
+        plt.errorbar(sigmas, a[i, :,  0], a[i, :,  1], label="w="+str(ws[i]))
+
+    plt.legend()
+    plt.xlabel("Sigma")
+    plt.ylabel("Final Sigma")
