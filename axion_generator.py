@@ -20,8 +20,6 @@ class Axion:
             mass=1e-12,
             coupling=1,
             velocities_file="axion_wind_sparse.pkl",
-            sampling_rate=800,
-            sampling_time=60 * 60 * 24 * 10,
             phase0=None
     ):
         # mass in eV
@@ -287,7 +285,7 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
     time_fraction = (1/coh_time + v_wind_mag / coh_length) / sampling_rate
     # The dad correction factor: as the random walk progresses, we want to limit
     # it's eventual size to a steady state. So keep track of the cumulative draw
-    # width and divide it back out. 
+    # width and divide it back out.
     total_width = time_fraction
     # calculate the first axion point
     a = v_wind.T[0] + vel
