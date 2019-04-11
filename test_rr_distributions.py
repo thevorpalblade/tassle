@@ -3,6 +3,7 @@ from itertools import accumulate
 import numba
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.optimize import curve_fit
 
 
 def do_rw(n=1000000, w=0.1, sigma=1):
@@ -112,6 +113,7 @@ def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.01, nrounds=1000):
     std_dev = np.std(np.array(coherence_lengths))
     return measured_sigma, measured_sigma_std, avg, std_dev
 
+
 @numba.njit(parallel=True)
 def search_coh_lengths():
     # first, define the range of w and sigma to search
@@ -132,22 +134,67 @@ def search_coh_lengths():
 def plot_properties(ws, sigmas, a):
     plt.figure(1)
     for i in range(len(ws)):
-        plt.errorbar(ws, a[:, i, 0], a[:, i, 1], label="sigma="+str(sigmas[i]))
+        plt.errorbar(
+            ws, a[:, i, 0], a[:, i, 1], label="sigma=" + str(sigmas[i]))
     plt.legend()
     plt.xlabel("W")
     plt.ylabel("Final Sigma")
 
     plt.figure(2)
     for i in range(len(ws)):
-        plt.errorbar(ws, a[:, i, 2], a[:, i, 3], label="sigma="+str(sigmas[i]))
+        plt.errorbar(
+            ws, a[:, i, 2], a[:, i, 3], label="sigma=" + str(sigmas[i]))
     plt.legend()
     plt.xlabel("W")
     plt.ylabel("Coherence Length")
 
     plt.figure(3)
     for i in range(len(sigmas)):
-        plt.errorbar(sigmas, a[i, :,  0], a[i, :,  1], label="w="+str(ws[i]))
+        plt.errorbar(sigmas, a[i, :, 0], a[i, :, 1], label="w=" + str(ws[i]))
 
     plt.legend()
     plt.xlabel("Sigma")
     plt.ylabel("Final Sigma")
+
+
+def fitting(ws, sigmas, results):
+    # relationship between the weights, w, and the measured sigmas:
+    def final_sigma_fit(w, amplitude):
+        return amplitude / (1 - w)**0.5
+
+    # fit all the meas_sigma vs ws curves to the above form, and extract
+    # the proportionality constant in each case
+    amps = [
+        curve_fit(final_sigma_fit, ws, results[:, i, 0])[0][0]
+        for i in range(len(ws))
+    ]
+
+    # the result is linear in the initial sigmas:
+    magic_const = np.polyfit(sigmas, amps, 1)[0]
+    print("the magic constant is: ", magic_const)
+
+    # the magic constant is 0.71105544, so the final relationship is:
+    # final_sigma = 0.71105544 * init_sigma / (1 - w)**0.5
+
+    # OK, so now lets compute the relationship between w, sigma, and
+    # coherence time
+    # Based on the plots, it seems like there's no sigma dependence.
+    #
+    def coht_fit(w, amp, y0):
+        return y0 + amp / (1 - w)
+    x = [curve_fit(coht_fit, ws, results[:, i, 2])[0] for i in range(len(ws))]
+    print(np.mean(x, axis=0))
+
+    # we get amp = 0.07758531, and y0 = 2.3798211, so
+    # coh_time = 2.3798211 + 0.07758531 / (1 - w)
+    # although I remain sceptical of our definition of coherence time here.
+    
+    # lets invert!
+    # (1 - w)t = y0 + amp1
+    # t - wt = y0 + amp1
+    # -w = (y0 + amp1 - t)/t
+    #### w = (t - y0 - amp1)/t
+
+    # sigma_f = amp2 * sigma / sqrt(1-w)
+    # sigma = sigma_f * sqrt(1-w) / amp2
+    #### sigma = sigma_f * np.sqrt(1 - (t - y0 - amp1)/t) / amp2
