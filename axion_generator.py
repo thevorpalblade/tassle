@@ -1,10 +1,7 @@
 # This module is the axion generator for the CASPEr-wind MC.
 
-import itertools
 import pickle
 import time
-import timeit
-from itertools import accumulate
 
 import numba
 import numpy as np
