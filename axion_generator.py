@@ -40,6 +40,8 @@ class Axion:
         self.v_std = 200
         if phase0 is None:
             self.phase0 = 2 * np.pi * np.random.random()
+        else:
+            self.phase0 = phase0
         # the standard deviation of the distribution the phase change is drawn
         # from, when normalized by timestep
         self.phase_rr_std = 1 / np.sqrt(2)
