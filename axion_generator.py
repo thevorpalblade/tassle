@@ -232,7 +232,8 @@ class Axion:
         print(stp - strt)
         return t, result
 
-    def plot_psd(self, t, axion, sampling_rate):
+    @staticmethod
+    def plot_psd(t, axion, sampling_rate):
         f = np.fft.rfftfreq(len(t), 1 / sampling_rate)
         p0 = abs(np.fft.rfft(axion))**2
         plt.plot(f, p0)
