@@ -1,10 +1,7 @@
 # This module is the axion generator for the CASPEr-wind MC.
 
-import itertools
 import pickle
 import time
-import timeit
-from itertools import accumulate
 
 import numba
 import numpy as np
@@ -20,8 +17,6 @@ class Axion:
             mass=1e-12,
             coupling=1,
             velocities_file="axion_wind_sparse.pkl",
-            sampling_rate=800,
-            sampling_time=60 * 60 * 24 * 10,
             phase0=None
     ):
         # mass in eV
@@ -45,6 +40,8 @@ class Axion:
         self.v_std = 200
         if phase0 is None:
             self.phase0 = 2 * np.pi * np.random.random()
+        else:
+            self.phase0 = phase0
         # the standard deviation of the distribution the phase change is drawn
         # from, when normalized by timestep
         self.phase_rr_std = 1 / np.sqrt(2)
@@ -235,7 +232,8 @@ class Axion:
         print(stp - strt)
         return t, result
 
-    def plot_psd(self, t, axion, sampling_rate):
+    @staticmethod
+    def plot_psd(t, axion, sampling_rate):
         f = np.fft.rfftfreq(len(t), 1 / sampling_rate)
         p0 = abs(np.fft.rfft(axion))**2
         plt.plot(f, p0)
@@ -287,7 +285,7 @@ def heavy_lifting(vel_rr_std, v0, a_rr_std, a0, phase_rr_std, phase0,
     time_fraction = (1/coh_time + v_wind_mag / coh_length) / sampling_rate
     # The dad correction factor: as the random walk progresses, we want to limit
     # it's eventual size to a steady state. So keep track of the cumulative draw
-    # width and divide it back out. 
+    # width and divide it back out.
     total_width = time_fraction
     # calculate the first axion point
     a = v_wind.T[0] + vel
