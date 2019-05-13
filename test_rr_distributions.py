@@ -180,21 +180,21 @@ def fitting(ws, sigmas, results):
     # coherence time
     # Based on the plots, it seems like there's no sigma dependence.
     #
-    def coht_fit(w, amp, y0):
-        return y0 + amp / (1 - w)
+    def coht_fit(w, C2, y0):
+        return y0 + C2 / (1 - w)
     x = [curve_fit(coht_fit, ws, results[:, i, 2])[0] for i in range(len(ws))]
     print(np.mean(x, axis=0))
 
-    # we get amp = 0.07758531, and y0 = 2.3798211, so
+    # we get C2 = 0.07758531, and y0 = 2.3798211, so
     # coh_time = 2.3798211 + 0.07758531 / (1 - w)
     # although I remain sceptical of our definition of coherence time here.
     
     # lets invert!
-    # (1 - w)t = y0 + amp1
-    # t - wt = y0 + amp1
-    # -w = (y0 + amp1 - t)/t
-    #### w = (t - y0 - amp1)/t
+    # (1 - w)t = y0(1-w) + C2
+    # (1-w)(t-y0) = C2
+    # w-1 = -C2/(t - y0)
+    ### w = 1 - C2/(t - y0)
 
-    # sigma_f = amp2 * sigma / sqrt(1-w)
-    # sigma = sigma_f * sqrt(1-w) / amp2
-    #### sigma = sigma_f * np.sqrt(1 - (t - y0 - amp1)/t) / amp2
+    # sigma_f = C1 * sigma / sqrt(1-w)
+    # sigma = sigma_f * sqrt(1-w) / C1
+    #### sigma = sigma_f * np.sqrt(C2/(t - y0)) / C1
