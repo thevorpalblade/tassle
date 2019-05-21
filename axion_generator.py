@@ -140,7 +140,8 @@ class Axion:
             plt.show()
         return axion
 
-    def do_fast_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
+    def do_fast_axion_sim(self, start_t, end_t, sampling_rate,
+                          rayleigh_amp=True, debug=False):
         """
         """
         # sanity check
@@ -186,6 +187,7 @@ class Axion:
             self.coh_time,
             self.coh_length,
             w=0.001,
+            rayleigh_amp=rayleigh_amp,
             debug=debug,
         )
         stp = time.time()
@@ -300,6 +302,7 @@ def heavy_lifting(vel_rr_std,
                   coh_time,
                   coh_length,
                   w=0.001,
+                  rayleigh_amp=True,
                   debug=True):
     """
     This inner loop combines several tasks into one optimized loop, so that we
@@ -355,9 +358,10 @@ def heavy_lifting(vel_rr_std,
         # we do similar calcuations to get it's properties
 
         w, sigma = get_rr_properties(effective_coh_time, a_rr_std, "amplitude")
-        amp = (amp * w + (np.random.randn() + np.random.randn() * 1j) *
-               #root_time_fraction *
-               sigma)
+        if rayleigh_amp:
+            amp = (amp * w + (np.random.randn() + np.random.randn() * 1j) *
+                #root_time_fraction *
+                sigma)
         # the phase random walk
         phase += phase_rr_std * root_time_fraction * np.random.randn()
 
