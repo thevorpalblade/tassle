@@ -140,7 +140,7 @@ class Axion:
             plt.show()
         return axion
 
-    def do_fast_axion_sim(self, start_t, end_t, sampling_rate):
+    def do_fast_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
         """
         """
         # sanity check
@@ -153,18 +153,20 @@ class Axion:
 
         n = int(sampling_time * sampling_rate)
 
-        print("Generating time points")
+        if debug:
+            print("Generating time points")
         t = np.linspace(start_t, end_t, n)
 
-        print("Calculating interpolated quantities")
+        if debug:
+            print("Calculating interpolated quantities")
         strt = time.time()
         v_wind = self.v_wind(t)
         zhat = self.zhat(t)
 
         stp = time.time()
-        print(stp - strt)
-
-        print("doing heavy lifting")
+        if debug:
+            print(stp - strt)
+            print("doing heavy lifting")
 
         strt = time.time()
         r = heavy_lifting(
@@ -185,7 +187,8 @@ class Axion:
             self.coh_length,
             w=0.001)
         stp = time.time()
-        print(stp - strt)
+        if debug:
+            print(stp - strt)
         return t, r
 
     def do_axion_sim(self, start_t, end_t, sampling_rate, debug=False):
@@ -201,34 +204,39 @@ class Axion:
 
         n = int(sampling_time * sampling_rate)
 
-        print("Generating time points")
+        if debug:
+            print("Generating time points")
         t = np.linspace(start_t, end_t, n)
 
-        print("Calculating axion wind magnitudes")
+        if debug:
+            print("Calculating axion wind magnitudes")
         strt = time.time()
         v_wind = self.v_wind(t)
         v_wind_mag = np.sqrt(np.sum(v_wind**2, axis=0))
         stp = time.time()
-        print(stp - strt)
-        print("Calculating effective coherence times")
+        if debug:
+            print(stp - strt)
+            print("Calculating effective coherence times")
         # effective coherence times based on DM halo velocities
         coh_times = 1 / (1 / self.coh_time + v_wind_mag / self.coh_length)
         # compute the time fractions, relevant for deciding the width of the
         # random distribution we pull from for the phase/velocity deltas
         root_time_fractions = np.sqrt(1 / (sampling_rate * coh_times))
 
-        print("Calculating phases")
+        if debug:
+            print("Calculating phases")
         strt = time.time()
         phases = self.gen_phases(root_time_fractions, n)
         stp = time.time()
-        print(stp - strt)
-
-        print("Calculating Velocities")
+        if debug:
+            print(stp - strt)
+            print("Calculating Velocities")
         strt = time.time()
         vels = gen_vels(self.vel_rr_std, root_time_fractions, self.v0, n)
         stp = time.time()
-        print(stp - strt)
-        print("Calculating axion field values")
+        if debug:
+            print(stp - strt)
+            print("Calculating axion field values")
 
         strt = time.time()
         if debug:
@@ -239,7 +247,8 @@ class Axion:
             result = get_pure_axion(vels, v_wind, phases, xhat, yhat,
                                     self.coupling, self.frequency, t)
         stp = time.time()
-        print(stp - strt)
+        if debug:
+            print(stp - strt)
         return t, result
 
     @staticmethod
@@ -317,7 +326,7 @@ def heavy_lifting(vel_rr_std,
     wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b))**2)
 
     axion[0] = wind * coupling * np.abs(amp) * np.sin(frequency * t[0] + phase)
-    
+
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
         # the axion wind speed
