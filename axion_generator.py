@@ -377,9 +377,8 @@ def heavy_lifting(vel_rr_std,
             amps[i] = np.abs(amp)
             phases[i] = phase
             vels[i] = vel
-            return axion, phases, vels, amps, winds
-        else:
-            return axion
+
+        return axion, phases, vels, amps, winds
 
 @numba.njit
 def get_rr_properties(coh_t, std, rr_type):
