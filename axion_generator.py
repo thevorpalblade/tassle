@@ -93,8 +93,12 @@ class Axion:
         self.coh_time = coh_ratio / self.frequency
         self.coh_length = self.coh_time * (6.2 / 40e-6)
 
-    def do_fast_axion_sim(self, start_t, end_t, sampling_rate,
-                          rayleigh_amp=True, debug=False,
+    def do_fast_axion_sim(self,
+                          start_t,
+                          end_t,
+                          sampling_rate,
+                          rayleigh_amp=True,
+                          debug=False,
                           compute_wind=True):
         """
         """
@@ -150,13 +154,20 @@ class Axion:
             print(stp - strt)
         return t, r
 
-    def do_sim(self, days=.01, debug=False, rayleigh_amp=True, compute_wind=True):
+    def do_sim(self,
+               days=.01,
+               debug=False,
+               rayleigh_amp=True,
+               compute_wind=True):
         """A convenience function for doing simulations from the beginning
         of the axion wind data for a number of days"""
         start = self.t_raw[0]
         end = start + 60 * 60 * 24 * days
-        r = self.do_fast_axion_sim(start, end, self.frequency * 2.5,
-                                   debug=debug,  rayleigh_amp=rayleigh_amp,
+        r = self.do_fast_axion_sim(start,
+                                   end,
+                                   self.frequency * 2.5,
+                                   debug=debug,
+                                   rayleigh_amp=rayleigh_amp,
                                    compute_wind=compute_wind)
         return r
 
@@ -229,32 +240,32 @@ def heavy_lifting(vel_rr_std,
         #      1 / coh_time + v_wind_mag / coh_length) / sampling_rate
         root_time_fraction = np.sqrt(time_fraction)
         if compute_wind:
-            # calculate the weight and sigma for the velocity weighted random walk
-            # from the
+            # calculate the weight and sigma for the velocity weighted random
+            # walk from the
             # standard deviation and coherence time of the velocity
 
             w, sigma = get_rr_properties(effective_coh_time, vel_rr_std,
-                                        "velocity")
-            vel = (vel * w + np.random.randn(3) * sigma *
-                   #root_time_fraction *
-                   np.array([1, 1, 1]))
+                                         "velocity")
+            vel = (
+                vel * w + np.random.randn(3) * sigma *
+            #root_time_fraction *
+                np.array([1, 1, 1]))
             # an optimized form for the magnitude cross product
             a = v_wind.T[i] + vel
             b = z_hat.T[i]
             wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b))**2)
-
 
         # the amplitude random walk is a random-walk in the complex plane,
         # we do similar calcuations to get it's properties
 
         w, sigma = get_rr_properties(effective_coh_time, a_rr_std, "amplitude")
         if rayleigh_amp:
-            amp = (amp * w + (np.random.randn() + np.random.randn() * 1j) *
-                   #root_time_fraction *
-                   sigma)
+            amp = (
+                amp * w + (np.random.randn() + np.random.randn() * 1j) *
+            #root_time_fraction *
+                sigma)
         # the phase random walk
         phase += phase_rr_std * root_time_fraction * np.random.randn()
-
 
         axion[i] = wind * coupling * np.abs(amp) * np.sin(frequency * t[i] +
                                                           phase)
@@ -265,6 +276,7 @@ def heavy_lifting(vel_rr_std,
             vels[i] = vel
 
     return axion, phases, vels, amps, winds
+
 
 @numba.njit
 def get_rr_properties(coh_t, std, rr_type):
@@ -282,7 +294,7 @@ def get_rr_properties(coh_t, std, rr_type):
 
     w = 1 - C2 / (coh_t - y0)
     sigma = std * np.sqrt(1 - w) / C1
-#    print(w, sigma)
+    #    print(w, sigma)
     return w, sigma
 
 
@@ -291,7 +303,6 @@ def main(days=.01, debug=False):
     start = a.t_raw[0]
     end = start + 60 * 60 * 24 * days
     r = a.do_fast_axion_sim(start, end, a.frequency * 2.5)
-    #r = a.do_axion_sim(start, end, a.frequency * 2.5)
     return r
 
 
