@@ -1,8 +1,9 @@
-# This module is the axion generator for the CASPEr-wind MC.
+#!/usr/bin/python
+# This module is the axion generator for the axion event generator MC.
+# Written by Matthew Lawson in 2019 at Stockholm University
+# mmlawson@ucdavis.edu
 
-import pickle
 import time
-
 import numba
 import numpy as np
 from matplotlib import pyplot as plt
@@ -15,7 +16,7 @@ class Axion:
     def __init__(self,
                  mass=1e-12,
                  coupling=1,
-                 velocities_file="axion_wind_sparse.pkl",
+                 velocities_file="axion_wind_sparse.npz",
                  phase0=None):
         # mass in eV
         self.mass = mass
@@ -28,9 +29,7 @@ class Axion:
         # our coherence time (1/ the real linewidth)
         # self.coherence_time = 1 / (linewidth * self.frequency)
         self.coh_time = 40e-6 * 100e-6 / self.mass
-        # placeholder value, in km
-        # TODO: this is just a placeholder value
-        # self.coh_length = 10 * self.coherence_time
+        # coherence length, in km
         self.coh_length = 6.2 * 100e-6 / self.mass
 
         # width of 1d velocity distribution in km/sec
@@ -58,18 +57,22 @@ class Axion:
             self.v_std * np.random.randn(),
         ])
 
-        # load the average axion wind data
-        with open(velocities_file, "rb") as wind_file:
-            t, xhat, yhat, zhat, v_wind = pickle.load(wind_file)
+        # load the average axion wind data. Its in a npz archive
+        archive = np.load(velocities_file)
+        # sort the array names to make absolutely sure there is no funny
+        # business
+        archive.files.sort()
+        # unpack the arrays
+        t, v_wind, xhat, yhat, zhat = [archive[i] for i in archive.files]
         # times at which v_wind was computed, in unix time (Seconds since
         # 1 Jan 1970 UTC)
-        self.t_raw = t.value
-        # unit vectors in the CASPEr frame, unitless
-        self.xhat = interp1d(self.t_raw, np.float64(xhat.xyz.value))
-        self.yhat = interp1d(self.t_raw, np.float64(yhat.xyz.value))
-        self.zhat = interp1d(self.t_raw, np.float64(zhat.xyz.value))
-        # velocity of the DM at CASPEr, on average, in km/sec
-        self.v_wind = interp1d(self.t_raw, np.float64(v_wind.d_xyz.value))
+        self.t_raw = t
+        # unit vectors in the experiment frame, unitless
+        self.xhat = interp1d(self.t_raw, xhat)
+        self.yhat = interp1d(self.t_raw, yhat)
+        self.zhat = interp1d(self.t_raw, zhat)
+        # velocity of the DM at experiment, on average, in km/sec
+        self.v_wind = interp1d(self.t_raw, v_wind)
 
     def change_mass(self, mass):
         """set a new axion mass"""
