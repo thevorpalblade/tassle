@@ -2,8 +2,9 @@
 # This module is the axion generator for the axion event generator MC.
 # Written by Matthew Lawson in 2019 at Stockholm University
 # mmlawson@ucdavis.edu
-
+import os
 import time
+
 import numba
 import numpy as np
 from matplotlib import pyplot as plt
@@ -16,7 +17,7 @@ class Axion:
     def __init__(self,
                  mass=1e-12,
                  coupling=1,
-                 velocities_file="axion_wind_sparse.npz",
+                 velocities_file=None,
                  phase0=None):
         # mass in eV
         self.mass = mass
@@ -58,7 +59,12 @@ class Axion:
         ])
 
         # load the average axion wind data. Its in a npz archive
-        archive = np.load(velocities_file)
+        # This is the default file
+        if velocities_file is None:
+            path = os.path.dirname(__file__) + "/axion_wind_sparse.npz"
+        else:
+            path = velocities_file
+        archive = np.load(path)
         # sort the array names to make absolutely sure there is no funny
         # business
         archive.files.sort()
@@ -100,9 +106,12 @@ class Axion:
                           start_t,
                           end_t,
                           sampling_rate,
-                          rayleigh_amp=True,
-                          debug=False,
-                          compute_wind=True):
+                          sensitive_axes=0,
+                          axion_wind=True,
+                          random_amp=True,
+                          random_vel=True,
+                          random_phase=True,
+                          debug=False):
         """
         """
         # sanity check
@@ -124,6 +133,12 @@ class Axion:
         strt = time.time()
         v_wind = self.v_wind(t)
         zhat = self.zhat(t)
+        if sensitive_axes == 0 or sensitive_axes == 3:
+            xhat = self.xhat(t)
+            yhat = self.yhat(t)
+        else:
+            xhat = np.array([[]])
+            yhat = np.array([[]])
 
         stp = time.time()
         if debug:
@@ -140,6 +155,8 @@ class Axion:
             self.phase0,
             n,
             v_wind,
+            xhat,
+            yhat,
             zhat,
             t,
             sampling_rate,
@@ -147,9 +164,11 @@ class Axion:
             self.coupling,
             self.coh_time,
             self.coh_length,
-            w=0.001,
-            rayleigh_amp=rayleigh_amp,
-            compute_wind=compute_wind,
+            sensitive_axes=sensitive_axes,
+            axion_wind=axion_wind,
+            random_amp=random_amp,
+            random_vel=random_vel,
+            random_phase=random_phase,
             debug=debug,
         )
         stp = time.time()
@@ -184,6 +203,8 @@ def heavy_lifting(vel_rr_std,
                   phase0,
                   n,
                   v_wind,
+                  x_hat,
+                  y_hat,
                   z_hat,
                   t,
                   sampling_rate,
@@ -191,94 +212,146 @@ def heavy_lifting(vel_rr_std,
                   coupling,
                   coh_time,
                   coh_length,
-                  w=0.001,
-                  rayleigh_amp=True,
-                  compute_wind=True,
+                  sensitive_axes=0,
+                  axion_wind=True,
+                  random_amp=True,
+                  random_vel=True,
+                  random_phase=True,
                   debug=True):
     """
     This inner loop combines several tasks into one optimized loop, so that we
     only have to run one iteration.
     """
-    # the axion array
-    axion = np.zeros(n)
     if debug:
         phases = np.zeros(n)
         vels = np.zeros((n, 3))
         amps = np.zeros(n)
         winds = np.zeros(n)
-        print("wind ", compute_wind)
-        print("Rayleigh ", rayleigh_amp)
+    # if sensitive_axes == 0 we want to keep the full vector output of the axion
+    # wind simulation.
+    if sensitive_axes == 0:
+        axion_y = np.zeros(n)
+        axion_z = np.zeros(n)
+    # otherwise a simple scalar will do. We will use axion_x in either the
+    # scalar case (as the only asnwer) or the vector case (as the x component)
+    axion_x = np.zeros(n)
     # variables to hold the last phase, velocity, and amplitude (the things
     # being random-walked
     phase = phase0
     vel = v0
     # if we are calcuating the wind, do the first point
-    v_wind_mag = np.sqrt((v_wind.T[0]).dot(v_wind.T[0]))
-    a = v_wind.T[0] + vel
-    b = z_hat.T[0]
-    wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b))**2)
-    if not compute_wind:
+    if axion_wind:
+        total_wind = v_wind.T[0] + vel
+        if sensitive_axes == 0:
+            wind_vect = np.array([
+                x_hat.T[0].dot(total_wind), y_hat.T[0].dot(total_wind),
+                z_hat.T[0].dot(total_wind)
+            ])
+        elif sensitive_axes == 1:
+            wind = z_hat.T[0].dot(total_wind)
+        elif sensitive_axes == 2:
+            # an optimized form for the magnitude cross product
+            v = total_wind
+            z = z_hat.T[0]
+            wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
+        elif sensitive_axes == 3:
+            wind = np.linalg.norm(total_wind)
+    else:
         # if not computing the wind, the wind strength is the speed of light
         # here given in km/sec
         wind = 3e5
+        random_vel = False
+
+    if (not random_vel) and axion_wind:
+        # if we are an axion wind experiment but are ignoring the stocastic
+        # component (for computational efficiency or debugging) just set the
+        # random component to zero for all time
+        vel = np.array([0., 0., 0.])
 
     amp = a0
-    # the time fraction gives the width of the distribution to draw from,
-    # taking into account the velocity at this point and the sampling rate.
-    # (you have to take the square root to get the real width though)
-    time_fraction = (1 / coh_time + v_wind_mag / coh_length) / sampling_rate
-    # calculate the first axion point
-    axion[0] = wind * coupling * np.abs(amp) * np.sin(frequency * t[0] + phase)
+    # in the case where we are resolving the full 3d axion velocity, we have
+    # to compute each velocity component seperately to keep the numba typing
+    # system happy
+    if sensitive_axes == 0:
+        axion_no_wind = coupling * np.abs(amp) * np.sin(frequency * t[0] +
+                                                        phase)
+        axion_x[0] = wind_vect[0] * axion_no_wind
+        axion_y[0] = wind_vect[1] * axion_no_wind
+        axion_z[0] = wind_vect[2] * axion_no_wind
+
+    else:
+        axion_x[0] = wind * coupling * np.abs(amp) * np.sin(frequency * t[0] +
+                                                            phase)
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
-        # the axion wind speed
-        if compute_wind:
+        # the axion wind speed, for computing the effective coherence time
+        if axion_wind:
             v_wind_mag = np.sqrt((v_wind.T[i]).dot(v_wind.T[i]))
-
-        # compute the time fraction (based on the effective coherence time)
+        # calculate the effective coherence time, the coherence time when taking
+        # into account velocity through the halo
         effective_coh_time = 1 / (1 / coh_time + v_wind_mag / coh_length)
-        time_fraction = 1 / (effective_coh_time * sampling_rate)
-        #  time_fraction = (
-        #      1 / coh_time + v_wind_mag / coh_length) / sampling_rate
-        root_time_fraction = np.sqrt(time_fraction)
-        if compute_wind:
+        if axion_wind:
             # calculate the weight and sigma for the velocity weighted random
             # walk from the
             # standard deviation and coherence time of the velocity
-
-            w, sigma = get_rr_properties(effective_coh_time, vel_rr_std,
-                                         "velocity")
-            vel = (
-                vel * w + np.random.randn(3) * sigma *
-            #root_time_fraction *
-                np.array([1, 1, 1]))
-            # an optimized form for the magnitude cross product
-            a = v_wind.T[i] + vel
-            b = z_hat.T[i]
-            wind = np.sqrt(a.dot(a) * b.dot(b) - (a.dot(b))**2)
-
+            if random_vel:
+                w, sigma = get_rr_properties(effective_coh_time, vel_rr_std,
+                                             "velocity")
+                vel = (vel * w +
+                       np.random.randn(3) * sigma * np.array([1, 1, 1]))
+            # get the component of the wind along the sensitive axis/axes of the
+            # experiment
+            total_wind = v_wind.T[i] + vel
+            if sensitive_axes == 0:
+                wind_vect = np.array([
+                    x_hat.T[i].dot(total_wind), y_hat.T[i].dot(total_wind),
+                    z_hat.T[i].dot(total_wind)
+                ])
+            elif sensitive_axes == 1:
+                wind = z_hat.T[i].dot(total_wind)
+            elif sensitive_axes == 2:
+                # an optimized form for the magnitude cross product
+                v = total_wind
+                z = z_hat.T[i]
+                wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
+            elif sensitive_axes == 3:
+                wind = np.linalg.norm(total_wind)
         # the amplitude random walk is a random-walk in the complex plane,
         # we do similar calcuations to get it's properties
 
-        w, sigma = get_rr_properties(effective_coh_time, a_rr_std, "amplitude")
-        if rayleigh_amp:
-            amp = (
-                amp * w + (np.random.randn() + np.random.randn() * 1j) *
-            #root_time_fraction *
-                sigma)
+        if random_amp:
+            w, sigma = get_rr_properties(effective_coh_time, a_rr_std,
+                                         "amplitude")
+            amp = (amp * w +
+                   (np.random.randn() + np.random.randn() * 1j) * sigma)
         # the phase random walk
-        phase += phase_rr_std * root_time_fraction * np.random.randn()
+        if random_phase:
+            # compute the time fraction (based on the effective coherence time)
+            time_fraction = 1 / (effective_coh_time * sampling_rate)
+            root_time_fraction = np.sqrt(time_fraction)
+            phase += phase_rr_std * root_time_fraction * np.random.randn()
 
-        axion[i] = wind * coupling * np.abs(amp) * np.sin(frequency * t[i] +
-                                                          phase)
+        # in the case where we are resolving the full 3d axion velocity, we have
+        # to compute each velocity component seperately to keep the numba typing
+        # system happy
+        if sensitive_axes == 0:
+            axion_no_wind = coupling * np.abs(amp) * np.sin(frequency * t[i] +
+                                                            phase)
+            axion_x[i] = wind_vect[0] * axion_no_wind
+            axion_y[i] = wind_vect[1] * axion_no_wind
+            axion_z[i] = wind_vect[2] * axion_no_wind
+
+        else:
+            axion_x[i] = wind * coupling * np.abs(amp) * np.sin(frequency *
+                                                                t[i] + phase)
         if debug:
             winds[i] = wind
             amps[i] = np.abs(amp)
             phases[i] = phase
             vels[i] = vel
 
-    return axion, phases, vels, amps, winds
+    return axion_x, axion_y, axion_z, phases, vels, amps, winds
 
 
 @numba.njit
