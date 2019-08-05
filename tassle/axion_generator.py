@@ -285,18 +285,20 @@ def heavy_lifting(vel_rr_std,
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
+
         # the axion wind speed, for computing the effective coherence time
         if axion_wind:
             v_wind_mag = np.sqrt((v_wind.T[i]).dot(v_wind.T[i]))
         # calculate the effective coherence time, the coherence time when taking
         # into account velocity through the halo
         effective_coh_time = 1 / (1 / coh_time + v_wind_mag / coh_length)
+        time_fraction = 1 / (effective_coh_time * sampling_rate)
         if axion_wind:
             # calculate the weight and sigma for the velocity weighted random
             # walk from the
             # standard deviation and coherence time of the velocity
             if random_vel:
-                w, sigma = get_rr_properties(effective_coh_time, vel_rr_std,
+                w, sigma = get_rr_properties(1 / time_fraction, vel_rr_std,
                                              "velocity")
                 vel = (vel * w +
                        np.random.randn(3) * sigma * np.array([1, 1, 1]))
@@ -321,16 +323,14 @@ def heavy_lifting(vel_rr_std,
         # we do similar calcuations to get it's properties
 
         if random_amp:
-            w, sigma = get_rr_properties(effective_coh_time, a_rr_std,
+            w, sigma = get_rr_properties(1 / time_fraction, a_rr_std,
                                          "amplitude")
             amp = (amp * w +
                    (np.random.randn() + np.random.randn() * 1j) * sigma)
         # the phase random walk
         if random_phase:
             # compute the time fraction (based on the effective coherence time)
-            time_fraction = 1 / (effective_coh_time * sampling_rate)
-            root_time_fraction = np.sqrt(time_fraction)
-            phase += phase_rr_std * root_time_fraction * np.random.randn()
+            phase += phase_rr_std * np.sqrt(time_fraction) * np.random.randn()
 
         # in the case where we are resolving the full 3d axion velocity, we have
         # to compute each velocity component seperately to keep the numba typing
