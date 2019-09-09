@@ -273,15 +273,15 @@ def heavy_lifting(vel_rr_std,
     # to compute each velocity component seperately to keep the numba typing
     # system happy
     if sensitive_axes == 0:
-        axion_no_wind = coupling * np.abs(amp) * np.sin(frequency * t[0] +
-                                                        phase)
+        axion_no_wind = coupling * np.abs(amp) * np.sin(2 * np.pi * frequency *
+                                                        t[0] + phase)
         axion_x[0] = wind_vect[0] * axion_no_wind
         axion_y[0] = wind_vect[1] * axion_no_wind
         axion_z[0] = wind_vect[2] * axion_no_wind
 
     else:
-        axion_x[0] = wind * coupling * np.abs(amp) * np.sin(frequency * t[0] +
-                                                            phase)
+        axion_x[0] = wind * coupling * np.abs(amp) * np.sin(
+            2 * np.pi * frequency * t[0] + phase)
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
@@ -336,15 +336,15 @@ def heavy_lifting(vel_rr_std,
         # to compute each velocity component seperately to keep the numba typing
         # system happy
         if sensitive_axes == 0:
-            axion_no_wind = coupling * np.abs(amp) * np.sin(frequency * t[i] +
-                                                            phase)
+            axion_no_wind = coupling * np.abs(amp) * np.sin(
+                2 * np.pi * frequency * t[i] + phase)
             axion_x[i] = wind_vect[0] * axion_no_wind
             axion_y[i] = wind_vect[1] * axion_no_wind
             axion_z[i] = wind_vect[2] * axion_no_wind
 
         else:
-            axion_x[i] = wind * coupling * np.abs(amp) * np.sin(frequency *
-                                                                t[i] + phase)
+            axion_x[i] = wind * coupling * np.abs(amp) * np.sin(
+                2 * np.pi * frequency * t[i] + phase)
         if debug:
             winds[i] = wind
             amps[i] = np.abs(amp)
@@ -378,7 +378,7 @@ def main(days=.01, debug=False):
     a = Axion()
     start = a.t_raw[0]
     end = start + 60 * 60 * 24 * days
-    r = a.do_fast_axion_sim(start, end, a.frequency * 2.5)
+    r = a.do_fast_axion_sim(start, end, a.frequency * 3)
     return r
 
 

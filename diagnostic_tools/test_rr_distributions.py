@@ -22,6 +22,16 @@ def do_numba_rw(n=1000, w=0.99, sigma=1.0, init_sigma=7):
 
 
 @numba.njit(fastmath=True)
+def do_full_rw(n=1000, w=0.99, sigma=1.0, init_sigma=7):
+    result = np.zeros(n)
+    val = np.random.randn() * init_sigma
+    for i in range(n):
+        val = val * w + np.random.randn() * sigma
+        result[i] = val
+    return result
+
+
+@numba.njit(fastmath=True)
 def find_final_std(w, sigma, tolerance=0.01, n=1000, nrounds=1000):
     # get two initial data points
     vals = np.array([do_numba_rw(n, w=w, sigma=sigma) for i in range(nrounds)])
@@ -112,6 +122,28 @@ def find_coh_length(w, sigma, measured_sigma=-1., tolerance=.01, nrounds=1000):
     avg = np.mean(np.array(coherence_lengths))
     std_dev = np.std(np.array(coherence_lengths))
     return measured_sigma, measured_sigma_std, avg, std_dev
+
+
+def estimate_coh_length(w, sigma, n=1000, measured_sigma=-1., cutoff=1/np.e):
+    # if not passed a measured_sigma (final sigma of RR), find it:
+    measured_sigma_std = 0
+    if measured_sigma == -1.:
+        measured_sigma, measured_sigma_std = find_final_std(w, sigma)
+
+    # find a plausible initial coherence time
+    rw = do_full_rw(n, w=w, sigma=sigma, init_sigma=measured_sigma)
+    correlation = np.correlate(rw, rw[int(n*.97):])
+    for i, x in enumerate(correlation):
+        if x / correlation[0] < cutoff:
+            plt.plot(correlation/correlation[0])
+            plt.axhline(1/np.e)
+            plt.axvline(i)
+            return i
+    # if we didn't find the coherence time, recurse with more points!
+    return estimate_coh_length(w, sigma, n*10, measured_sigma, cutoff)
+
+
+    
 
 
 @numba.njit(parallel=True)
