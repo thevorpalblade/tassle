@@ -167,4 +167,94 @@ def plot_dm_component(days=365, samp_hrs=1, time=None):
     plt.plot(vy)
     return(t, x, y, z, halo_vel)
 
+############################
+##### Nate's Functions #####
+############################
 
+def FracDay(Y=2000, M=1, D=1):
+    """
+    A function that returns the fractional amount of days since Jan 1, 2000
+    as calculated by https://arxiv.org/pdf/1312.1355.pdf appendix. 
+    """
+
+
+    #[DD] = FracDay(Y,M,D) - Returns Fractional day (since Jan 2000 at 12.00), as calculated in
+    #https://arxiv.org/pdf/1312.1355.pdf appendix A. 
+    if (M==1 or M==2):
+        YY = Y-1
+        MM = M+12
+    else:
+        YY = Y
+        MM = M
+    DD = np.floor(365.25*YY) + np.floor(30.60001*(MM+1)) + D - 730563.5 + 0.5
+
+    return DD
+
+def ACalcV(T=0)
+    """
+    A function that returns the velocity vector in the lab frame (North, East, +Z) in km s^-1
+    for an input time(of fractional days since Jan 1, 2000)
+    as calculated by https://arxiv.org/pdf/1806.05927 appendix. 
+    """
+
+    #For when should the velocity be calculated? In fractional days since Jan 1 2000
+    
+    #Initial time
+    D = 1
+    M = 1
+    Y = 2000
+    
+    #Lab
+    #Mainz Staudingerweg 18
+    lat =  49.9916 * np.pi/180
+    lon =  08.2353 * np.pi/180
+
+    #%Times
+    DD = FracDay(Y,M,D)
+    DD = DD + T
+
+    #%0.997269566666667
+    td = ((2*np.pi)/0.99727)*(DD - 0.721)+lon #%Local Apparent Sidereal Time
+    #%td = 2*pi*DD/0.9973+lon;
+    ty = ((2*np.pi/365)*(DD - FracDay(Y=2000,M=3,D=20.5)))
+
+    #%Test (6 pm GMT 31 Jan 2009 should be DD = 3318.25)
+    #%D = 31 + 18/24;
+    #%M = 01;
+    #%Y = 2009;
+
+    #%Calculate fractional day
+
+    #%Sun velocity in galactic coords (V_LSR + Vpeculiar)
+    vsun = 232.6; #km s^-1
+    Vsun = vsun*np.array([0.0477, 0.9984, 0.0312]);
+
+    #%Earth revolution velocity in galactic coords
+    vearth = 29.79;#km s^-1
+    wy = 2*np.pi/365.25; #ty = FracDay(2000,3,20.5);
+    e1 = np.array([0.9940, 0.1095, 0.0031])
+    e2 = np.array([-0.0517, 0.4945, -0.8677])
+
+    Vearth = vearth*(np.cos(ty)*e1 + np.sin(ty)*e2);
+
+    #%Earth rotation in lab frame
+    vrot = 0.47; #km s^-1
+    Vrot = vrot*np.cos(lat)*np.array([0, -1, 0]) #always points East
+
+    #%Matrix transformations from galactic to intermediate equatorial:
+    Rgal = np.matrix([[-0.05487556, +0.49410943, -0.86766615],
+            [-0.87343709, -0.44482963, -0.19807637],
+            [-0.48383502, +0.74698225, +0.45598378]])
+        
+    Rlab = np.matrix([[-np.sin(lat)*np.cos(td), -np.sin(lat)*np.sin(td), np.cos(lat)],
+                      [np.sin(td)             , -np.cos(td)            , 0          ],
+                      [np.cos(lat)*np.cos(td) , np.cos(lat)*np.sin(td) , np.sin(lat)]])
+
+    v = (Rlab.dot(Rgal)).dot(Vsun + Vearth) + (Vrot);
+    
+return v
+
+
+###################################
+##### End of Nate's Functions #####
+###################################
