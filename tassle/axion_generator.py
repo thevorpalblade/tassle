@@ -35,7 +35,7 @@ class Axion:
 
         # width of 1d velocity distribution in km/sec
         # TODO real value here
-        self.v_std = 200
+        self.v_std = 4000
         if phase0 is None:
             self.phase0 = 2 * np.pi * np.random.random()
         else:
@@ -72,7 +72,13 @@ class Axion:
         t, v_wind, xhat, yhat, zhat = [archive[i] for i in archive.files]
         # times at which v_wind was computed, in unix time (Seconds since
         # 1 Jan 1970 UTC)
+        # raw versions of all
         self.t_raw = t
+        self.v_wind_raw = v_wind
+        self.xhat_raw = xhat
+        self.yhat_raw = yhat
+        self.zhat_raw = zhat
+
         # unit vectors in the experiment frame, unitless
         self.xhat = interp1d(self.t_raw, xhat)
         self.yhat = interp1d(self.t_raw, yhat)
@@ -129,20 +135,6 @@ class Axion:
         t = np.linspace(start_t, end_t, n)
 
         if debug:
-            print("Calculating interpolated quantities")
-        strt = time.time()
-        v_wind = self.v_wind(t)
-        zhat = self.zhat(t)
-        if sensitive_axes == 0 or sensitive_axes == 3:
-            xhat = self.xhat(t)
-            yhat = self.yhat(t)
-        else:
-            xhat = np.array([[]])
-            yhat = np.array([[]])
-
-        stp = time.time()
-        if debug:
-            print(stp - strt)
             print("doing heavy lifting")
 
         strt = time.time()
@@ -154,10 +146,11 @@ class Axion:
             self.phase_rr_std,
             self.phase0,
             n,
-            v_wind,
-            xhat,
-            yhat,
-            zhat,
+            self.v_wind_raw,
+            self.xhat_raw,
+            self.yhat_raw,
+            self.zhat_raw,
+            self.t_raw,
             t,
             sampling_rate,
             self.frequency,
@@ -179,8 +172,8 @@ class Axion:
     def do_sim(self,
                days=.01,
                debug=False,
-               rayleigh_amp=True,
-               compute_wind=True):
+               random_amp=True,
+               axion_wind=True):
         """A convenience function for doing simulations from the beginning
         of the axion wind data for a number of days"""
         start = self.t_raw[0]
@@ -189,9 +182,10 @@ class Axion:
                                    end,
                                    self.frequency * 2.5,
                                    debug=debug,
-                                   rayleigh_amp=rayleigh_amp,
-                                   compute_wind=compute_wind)
+                                   random_amp=random_amp,
+                                   axion_wind=axion_wind)
         return r
+
 
 
 @njit(cache=True, fastmath=True)
@@ -202,10 +196,11 @@ def heavy_lifting(vel_rr_std,
                   phase_rr_std,
                   phase0,
                   n,
-                  v_wind,
-                  x_hat,
-                  y_hat,
-                  z_hat,
+                  v_wind_raw,
+                  x_hat_raw,
+                  y_hat_raw,
+                  z_hat_raw,
+                  t_raw,
                   t,
                   sampling_rate,
                   frequency,
@@ -222,6 +217,19 @@ def heavy_lifting(vel_rr_std,
     This inner loop combines several tasks into one optimized loop, so that we
     only have to run one iteration.
     """
+    # first, our optimized interpolator
+    # make a formula for finding the array index for a specific time
+    slope = (len(t_raw) - 1) / (t_raw[-1] - t_raw[0])
+    intercept = - t_raw[0] * slope
+
+    def fast_interp1d(instant, ary):
+        # find the floating index to the array
+        idx = slope * instant + intercept
+        x1 = int(np.floor(idx))
+        x2 = int(np.ceil(idx))
+        # linear interpolation step
+        return ary.T[x1] + (ary.T[x2] - ary.T[x1]) * (idx - x1)
+
     if debug:
         phases = np.zeros(n)
         vels = np.zeros((n, 3))
@@ -237,25 +245,32 @@ def heavy_lifting(vel_rr_std,
     axion_x = np.zeros(n)
     # variables to hold the last phase, velocity, and amplitude (the things
     # being random-walked
-    phase = phase0
     vel = v0
+    # first point interpolations
+    v_wind = fast_interp1d(t[0], v_wind_raw)
+    x_hat = fast_interp1d(t[0], x_hat_raw)
+    y_hat = fast_interp1d(t[0], y_hat_raw)
+    z_hat = fast_interp1d(t[0], z_hat_raw)
     # if we are calcuating the wind, do the first point
     if axion_wind:
-        total_wind = v_wind.T[0] + vel
+        total_wind = v_wind + vel
+        wind_norm = np.linalg.norm(total_wind)
+
         if sensitive_axes == 0:
             wind_vect = np.array([
-                x_hat.T[0].dot(total_wind), y_hat.T[0].dot(total_wind),
-                z_hat.T[0].dot(total_wind)
+                x_hat.dot(total_wind),
+                y_hat.dot(total_wind),
+                z_hat.dot(total_wind)
             ])
         elif sensitive_axes == 1:
-            wind = z_hat.T[0].dot(total_wind)
+            wind = z_hat.dot(total_wind)
         elif sensitive_axes == 2:
             # an optimized form for the magnitude cross product
             v = total_wind
-            z = z_hat.T[0]
+            z = z_hat
             wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
         elif sensitive_axes == 3:
-            wind = np.linalg.norm(total_wind)
+            wind = wind_norm
     else:
         # if not computing the wind, the wind strength is the speed of light
         # here given in km/sec
@@ -269,26 +284,34 @@ def heavy_lifting(vel_rr_std,
         vel = np.array([0., 0., 0.])
 
     amp = a0
+
+    eff_frequency = frequency * (1 + 0.5 * (wind_norm / 3e5) ** 2)
+    acc_phase = 2 * np.pi * eff_frequency / sampling_rate + phase0
+
+
     # in the case where we are resolving the full 3d axion velocity, we have
     # to compute each velocity component seperately to keep the numba typing
     # system happy
     if sensitive_axes == 0:
-        axion_no_wind = coupling * np.abs(amp) * np.sin(2 * np.pi * frequency *
-                                                        t[0] + phase)
+        axion_no_wind = coupling * np.abs(amp) * np.sin(acc_phase)
         axion_x[0] = wind_vect[0] * axion_no_wind
         axion_y[0] = wind_vect[1] * axion_no_wind
         axion_z[0] = wind_vect[2] * axion_no_wind
 
     else:
-        axion_x[0] = wind * coupling * np.abs(amp) * np.sin(
-            2 * np.pi * frequency * t[0] + phase)
+        axion_x[0] = wind * coupling * np.abs(amp) * np.sin(acc_phase)
 
     # do a modified random walk, which penalizes deviations from the mean
     for i in range(1, n):
-
+        # interpolations to get current axion wind 
+        v_wind = fast_interp1d(t[i], v_wind_raw)
+        x_hat = fast_interp1d(t[i], x_hat_raw)
+        y_hat = fast_interp1d(t[i], y_hat_raw)
+        z_hat = fast_interp1d(t[i], z_hat_raw)
+     
         # the axion wind speed, for computing the effective coherence time
         if axion_wind:
-            v_wind_mag = np.sqrt((v_wind.T[i]).dot(v_wind.T[i]))
+            v_wind_mag = np.sqrt(v_wind.dot(v_wind))
         # calculate the effective coherence time, the coherence time when taking
         # into account velocity through the halo
         effective_coh_time = 1 / (1 / coh_time + v_wind_mag / coh_length)
@@ -304,21 +327,23 @@ def heavy_lifting(vel_rr_std,
                        np.random.randn(3) * sigma * np.array([1, 1, 1]))
             # get the component of the wind along the sensitive axis/axes of the
             # experiment
-            total_wind = v_wind.T[i] + vel
+            total_wind = v_wind + vel
+            wind_norm = np.linalg.norm(total_wind)
             if sensitive_axes == 0:
                 wind_vect = np.array([
-                    x_hat.T[i].dot(total_wind), y_hat.T[i].dot(total_wind),
-                    z_hat.T[i].dot(total_wind)
+                    x_hat.dot(total_wind),
+                    y_hat.dot(total_wind),
+                    z_hat.dot(total_wind)
                 ])
             elif sensitive_axes == 1:
-                wind = z_hat.T[i].dot(total_wind)
+                wind = z_hat.dot(total_wind)
             elif sensitive_axes == 2:
                 # an optimized form for the magnitude cross product
                 v = total_wind
-                z = z_hat.T[i]
+                z = z_hat
                 wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
             elif sensitive_axes == 3:
-                wind = np.linalg.norm(total_wind)
+                wind = wind_norm
         # the amplitude random walk is a random-walk in the complex plane,
         # we do similar calcuations to get it's properties
 
@@ -328,27 +353,31 @@ def heavy_lifting(vel_rr_std,
             amp = (amp * w +
                    (np.random.randn() + np.random.randn() * 1j) * sigma)
         # the phase random walk
-        if random_phase:
+        # if random_phase:
+            # the total phase depends on 
             # compute the time fraction (based on the effective coherence time)
-            phase += phase_rr_std * np.sqrt(time_fraction) * np.random.randn()
+            # phase += phase_rr_std * np.sqrt(time_fraction) * np.random.randn()
+        # instead of a phase random walk, we modulate the frequency by the total
+        # axion velocity! The shift is by the (classical) kinetic energy
+        eff_frequency = frequency * (1 + 0.5 * (wind_norm / 3e5) ** 2)
+        acc_phase += 2 * np.pi * eff_frequency / sampling_rate
+        acc_phase = acc_phase % (2 * np.pi)
 
         # in the case where we are resolving the full 3d axion velocity, we have
         # to compute each velocity component seperately to keep the numba typing
         # system happy
         if sensitive_axes == 0:
-            axion_no_wind = coupling * np.abs(amp) * np.sin(
-                2 * np.pi * frequency * t[i] + phase)
+            axion_no_wind = coupling * np.abs(amp) * np.sin(acc_phase)
             axion_x[i] = wind_vect[0] * axion_no_wind
             axion_y[i] = wind_vect[1] * axion_no_wind
             axion_z[i] = wind_vect[2] * axion_no_wind
 
         else:
-            axion_x[i] = wind * coupling * np.abs(amp) * np.sin(
-                2 * np.pi * frequency * t[i] + phase)
+            axion_x[i] = wind * coupling * np.abs(amp) * np.sin(acc_phase)
         if debug:
             winds[i] = wind
             amps[i] = np.abs(amp)
-            phases[i] = phase
+            phases[i] = acc_phase
             vels[i] = vel
 
     return axion_x, axion_y, axion_z, phases, vels, amps, winds
