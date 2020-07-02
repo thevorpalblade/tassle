@@ -35,28 +35,21 @@ class Axion:
 
         # width of 1d velocity distribution in km/sec
         # TODO real value here
-        self.v_std = 4000
+        self.v_std = 300
         if phase0 is None:
             self.phase0 = 2 * np.pi * np.random.random()
         else:
             self.phase0 = phase0
-        # the standard deviation of the distribution the phase change is drawn
-        # from, when normalized by timestep
-        self.phase_rr_std = 1 / np.sqrt(2)
         # velocity distribution width to draw from for velocity random walk
         # (may be different from the width of the maxwell velocity
         # distribution) TODO: check this
         self.vel_rr_std = self.v_std / np.sqrt(2)
+        # amplitude random walk parameters
         self.a_rr_std = 1.
         self.a0 = 1
 
-        # the random axion velocity
-
-        self.v0 = np.array([
-            self.v_std * np.random.randn(),
-            self.v_std * np.random.randn(),
-            self.v_std * np.random.randn(),
-        ])
+        # the initial random axion velocity
+        self.v0 = self.v_std * np.random.randn(3)
 
         # load the average axion wind data. Its in a npz archive
         # This is the default file
@@ -78,13 +71,6 @@ class Axion:
         self.xhat_raw = xhat
         self.yhat_raw = yhat
         self.zhat_raw = zhat
-
-        # unit vectors in the experiment frame, unitless
-        self.xhat = interp1d(self.t_raw, xhat)
-        self.yhat = interp1d(self.t_raw, yhat)
-        self.zhat = interp1d(self.t_raw, zhat)
-        # velocity of the DM at experiment, on average, in km/sec
-        self.v_wind = interp1d(self.t_raw, v_wind)
 
     def change_mass(self, mass):
         """set a new axion mass"""
@@ -115,8 +101,6 @@ class Axion:
                           sensitive_axes=0,
                           axion_wind=True,
                           random_amp=True,
-                          random_vel=True,
-                          random_phase=True,
                           debug=False):
         """
         """
@@ -143,7 +127,6 @@ class Axion:
             self.v0,
             self.a_rr_std,
             self.a0,
-            self.phase_rr_std,
             self.phase0,
             n,
             self.v_wind_raw,
@@ -160,8 +143,6 @@ class Axion:
             sensitive_axes=sensitive_axes,
             axion_wind=axion_wind,
             random_amp=random_amp,
-            random_vel=random_vel,
-            random_phase=random_phase,
             debug=debug,
         )
         stp = time.time()
@@ -173,14 +154,15 @@ class Axion:
                days=.01,
                debug=False,
                random_amp=True,
-               axion_wind=True):
+               axion_wind=True,
+               ):
         """A convenience function for doing simulations from the beginning
         of the axion wind data for a number of days"""
         start = self.t_raw[0]
         end = start + 60 * 60 * 24 * days
         r = self.do_fast_axion_sim(start,
                                    end,
-                                   self.frequency * 2.5,
+                                   self.frequency * 5,
                                    debug=debug,
                                    random_amp=random_amp,
                                    axion_wind=axion_wind)
@@ -193,7 +175,6 @@ def heavy_lifting(vel_rr_std,
                   v0,
                   a_rr_std,
                   a0,
-                  phase_rr_std,
                   phase0,
                   n,
                   v_wind_raw,
@@ -210,8 +191,6 @@ def heavy_lifting(vel_rr_std,
                   sensitive_axes=0,
                   axion_wind=True,
                   random_amp=True,
-                  random_vel=True,
-                  random_phase=True,
                   debug=True):
     """
     This inner loop combines several tasks into one optimized loop, so that we
@@ -251,11 +230,12 @@ def heavy_lifting(vel_rr_std,
     x_hat = fast_interp1d(t[0], x_hat_raw)
     y_hat = fast_interp1d(t[0], y_hat_raw)
     z_hat = fast_interp1d(t[0], z_hat_raw)
+
+    total_wind = v_wind + vel
+    total_wind_norm = np.linalg.norm(total_wind)
+
     # if we are calcuating the wind, do the first point
     if axion_wind:
-        total_wind = v_wind + vel
-        wind_norm = np.linalg.norm(total_wind)
-
         if sensitive_axes == 0:
             wind_vect = np.array([
                 x_hat.dot(total_wind),
@@ -270,22 +250,17 @@ def heavy_lifting(vel_rr_std,
             z = z_hat
             wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
         elif sensitive_axes == 3:
-            wind = wind_norm
+            wind = total_wind_norm
     else:
         # if not computing the wind, the wind strength is the speed of light
         # here given in km/sec
         wind = 3e5
-        random_vel = False
-
-    if (not random_vel) and axion_wind:
-        # if we are an axion wind experiment but are ignoring the stocastic
-        # component (for computational efficiency or debugging) just set the
-        # random component to zero for all time
-        vel = np.array([0., 0., 0.])
+        # if it is not a wind experiment it must be a scalar sensitivity
+        sensitive_axes = 3
 
     amp = a0
 
-    eff_frequency = frequency * (1 + 0.5 * (wind_norm / 3e5) ** 2)
+    eff_frequency = frequency * (1 + 0.5 * (total_wind_norm / 3e5) ** 2)
     acc_phase = 2 * np.pi * eff_frequency / sampling_rate + phase0
 
 
@@ -310,25 +285,26 @@ def heavy_lifting(vel_rr_std,
         z_hat = fast_interp1d(t[i], z_hat_raw)
      
         # the axion wind speed, for computing the effective coherence time
-        if axion_wind:
-            v_wind_mag = np.sqrt(v_wind.dot(v_wind))
+        v_wind_mag = np.sqrt(v_wind.dot(v_wind))
         # calculate the effective coherence time, the coherence time when taking
         # into account velocity through the halo
         effective_coh_time = 1 / (1 / coh_time + v_wind_mag / coh_length)
         time_fraction = 1 / (effective_coh_time * sampling_rate)
+
+        # calculate the weight and sigma for the velocity weighted random
+        # walk from the
+        # standard deviation and coherence time of the velocity
+        w, sigma = get_rr_properties(1 / time_fraction, vel_rr_std, "velocity")
+        # this is the random walk on velocity step!
+        vel = (vel * w + np.random.randn(3) * sigma * np.array([1, 1, 1]))
+
+        # now get the total relative velocty from the wind component and the
+        # random component, and it's norm
+        total_wind = v_wind + vel
+        total_wind_norm = np.linalg.norm(total_wind)
+        # get the component of the velocity along the sensitive axis/axes of the
+        # experiment
         if axion_wind:
-            # calculate the weight and sigma for the velocity weighted random
-            # walk from the
-            # standard deviation and coherence time of the velocity
-            if random_vel:
-                w, sigma = get_rr_properties(1 / time_fraction, vel_rr_std,
-                                             "velocity")
-                vel = (vel * w +
-                       np.random.randn(3) * sigma * np.array([1, 1, 1]))
-            # get the component of the wind along the sensitive axis/axes of the
-            # experiment
-            total_wind = v_wind + vel
-            wind_norm = np.linalg.norm(total_wind)
             if sensitive_axes == 0:
                 wind_vect = np.array([
                     x_hat.dot(total_wind),
@@ -343,7 +319,7 @@ def heavy_lifting(vel_rr_std,
                 z = z_hat
                 wind = np.sqrt(z.dot(z) * v.dot(v) - (v.dot(z))**2)
             elif sensitive_axes == 3:
-                wind = wind_norm
+                wind = total_wind_norm
         # the amplitude random walk is a random-walk in the complex plane,
         # we do similar calcuations to get it's properties
 
@@ -352,14 +328,10 @@ def heavy_lifting(vel_rr_std,
                                          "amplitude")
             amp = (amp * w +
                    (np.random.randn() + np.random.randn() * 1j) * sigma)
-        # the phase random walk
-        # if random_phase:
-            # the total phase depends on 
-            # compute the time fraction (based on the effective coherence time)
-            # phase += phase_rr_std * np.sqrt(time_fraction) * np.random.randn()
+
         # instead of a phase random walk, we modulate the frequency by the total
         # axion velocity! The shift is by the (classical) kinetic energy
-        eff_frequency = frequency * (1 + 0.5 * (wind_norm / 3e5) ** 2)
+        eff_frequency = frequency * (1 + 0.5 * (total_wind_norm / 3e5) ** 2)
         acc_phase += 2 * np.pi * eff_frequency / sampling_rate
         acc_phase = acc_phase % (2 * np.pi)
 
