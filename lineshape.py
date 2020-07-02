@@ -1,17 +1,19 @@
 import tassle
 import time
+import multiprocessing
 import numpy as np
 from scipy.signal import welch
-from multiprocessing import Pool
 
-def main(n=100, processes=4, days=0.5):
+def main(n=100, processes=None, days=0.5):
     # initialize results array
     print("initializing with practice run")
     t_start = time.time()
     f, fft, psd = job(days)
     psd_f, psd_m = psd
+    if processes is None:
+        processes = multiprocessing.cpu_count()
 
-    p = Pool(processes)
+    p = multiprocessing.Pool(processes)
     for i in range(n):
         t = time.time()
         print("run number ", i)
