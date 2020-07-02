@@ -14,7 +14,7 @@ def main(n=100, processes=4, days=0.5):
     p = Pool(processes)
     for i in range(n):
         t = time.time()
-        print("run number ", n)
+        print("run number ", i)
         results = p.map(job, days * np.ones(processes))
         for j in results:
             fft += j[1]
@@ -24,7 +24,8 @@ def main(n=100, processes=4, days=0.5):
     fft = fft / (n * processes)
     print("finished all in ", t_start - time.time(), "seconds")
 
-    return [f, fft, psd_f, psd_m]
+    np.savez_compressed("lineshape_results.npz", f=f, fft=fft,
+                        psd_f=psd_f, psd_m=psd_m)
 
 
 def job(days):
