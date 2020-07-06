@@ -5,14 +5,17 @@ import numpy as np
 from scipy.signal import welch
 
 
-def main(n=3, processes=None, days=2):
+
+
+def main(n=100, processes=None, days=1):
     # initialize results array
     print("initializing with practice run")
     t_start = time.time()
     f, fft, psd = job(days)
     psd_f, psd_m = psd
     if processes is None:
-        processes = multiprocessing.cpu_count()
+        # account for hyperthreading, we are NOT IO bound
+        processes = multiprocessing.cpu_count() // 2
 
     p = multiprocessing.Pool(processes)
     for i in range(n):
@@ -36,7 +39,7 @@ def job(days):
     t, r = a.do_sim(days)
     fft = np.fft.rfft(r[0])
     f = np.fft.rfftfreq(len(r[0]), 1 / (5 * a.frequency))
-    psd = welch(r[2], t[1] - t[0], nperseg=2**23)
+    psd = welch(r[2], t[1] - t[0], nperseg=2**26)
     return f, fft, psd
 
 
