@@ -107,3 +107,4 @@ venv.bak/
 
 #specials
 diagnostic_tools/biased_rw.npy
+lineshape_results.npz
